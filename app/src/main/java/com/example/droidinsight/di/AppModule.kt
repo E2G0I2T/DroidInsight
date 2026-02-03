@@ -9,6 +9,8 @@ import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import javax.inject.Singleton
+import com.example.droidinsight.data.repository.UsageRepositoryImpl
+import com.example.droidinsight.domain.repository.UsageRepository
 
 @Module
 @InstallIn(SingletonComponent::class)
@@ -20,5 +22,13 @@ object AppModule {
         @ApplicationContext context: Context
     ): BatteryRepository {
         return BatteryRepositoryImpl(context)
+    }
+
+    @Provides
+    @Singleton
+    fun provideUsageRepository(
+        @ApplicationContext context: Context
+    ): UsageRepository {
+        return UsageRepositoryImpl(context)
     }
 }
