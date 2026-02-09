@@ -31,7 +31,25 @@ class UsageViewModel @Inject constructor(
 
     private fun loadUsageStats() {
         viewModelScope.launch {
-            _uiState.value = repository.getTodayUsageStats()
+            val rawList = repository.getTodayUsageStats()
+
+            // 데이터가 하나도 없으면 빈 리스트 처리
+            if (rawList.isEmpty()) {
+                _uiState.value = emptyList()
+                return@launch
+            }
+
+            // 1. 가장 오래 쓴 앱의 시간 찾기 (이게 기준값 1.0이 됨)
+            val maxUsageTime = rawList.first().usageTime.toFloat()
+
+            // 2. 각 앱의 비율(progress) 계산해서 업데이트
+            val processedList = rawList.map { model ->
+                model.copy(
+                    progress = if (maxUsageTime > 0) (model.usageTime / maxUsageTime) else 0f
+                )
+            }
+
+            _uiState.value = processedList
         }
     }
 

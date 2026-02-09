@@ -11,12 +11,17 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color // [필수] Color 에러 해결
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import coil.compose.AsyncImage // [필수] AsyncImage 에러 해결
+import com.example.droidinsight.domain.model.UsageModel
+import com.example.droidinsight.presentation.component.UsageBarChart
 
 @Composable
 fun UsageScreen(
@@ -50,34 +55,37 @@ fun UsageScreen(
         Spacer(modifier = Modifier.height(16.dp))
 
         if (hasPermission) {
-            // [상태 A] 권한 있음: 리스트 출력
             if (usageList.isEmpty()) {
-                Text("집계된 사용 기록이 없습니다. (조금만 기다려주세요)")
+                Text("집계된 사용 기록이 없습니다.")
             } else {
-                LazyColumn {
+                LazyColumn(
+                    contentPadding = PaddingValues(bottom = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    // 0번째 아이템으로 차트 넣기
+                    item {
+                        Text(
+                            text = "Top 5 사용량 비교",
+                            style = MaterialTheme.typography.titleMedium,
+                            modifier = Modifier.padding(bottom = 8.dp)
+                        )
+
+                        // 우리가 만든 커스텀 차트
+                        UsageBarChart(usageList = usageList)
+
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Divider() // 구분선
+                        Spacer(modifier = Modifier.height(16.dp))
+                    }
+
+                    // 리스트 아이템들
                     items(usageList) { app ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            // 아이콘 (라이브러리 없이 기본 아이콘 사용)
-                            Icon(
-                                imageVector = Icons.Default.Info,
-                                contentDescription = null,
-                                modifier = Modifier.size(40.dp),
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                            Spacer(modifier = Modifier.width(16.dp))
-                            Column {
-                                Text(app.appName, style = MaterialTheme.typography.titleMedium)
-                                Text(viewModel.formatTime(app.usageTime), style = MaterialTheme.typography.bodyMedium)
-                            }
-                        }
+                        UsageItem(app = app, viewModel = viewModel)
                     }
                 }
             }
         } else {
-            // [상태 B] 권한 없음: 버튼 출력
+            // 권한 없을 때 화면
             Column(
                 modifier = Modifier.fillMaxSize(),
                 verticalArrangement = Arrangement.Center,
@@ -95,6 +103,78 @@ fun UsageScreen(
                     Text("권한 허용하러 가기")
                 }
             }
+        }
+    }
+}
+
+@Composable
+fun UsageItem(app: UsageModel, viewModel: UsageViewModel) {
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+        ),
+        shape = MaterialTheme.shapes.medium,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // [수정된 부분] 아이콘 표시 로직
+                if (app.appIcon != null) {
+                    // 1. 실제 앱 아이콘이 있으면 Coil로 표시
+                    AsyncImage(
+                        model = app.appIcon,
+                        contentDescription = null,
+                        modifier = Modifier.size(40.dp)
+                    )
+                } else {
+                    // 2. 없으면 기본 안드로이드 아이콘 표시
+                    Icon(
+                        imageVector = Icons.Default.Info, // 기본 아이콘(i 모양)으로 변경
+                        contentDescription = null,
+                        modifier = Modifier.size(40.dp),
+                        tint = Color.Gray
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(16.dp))
+
+                // 앱 이름 & 시간
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = app.appName, // 진짜 이름
+                        style = MaterialTheme.typography.titleMedium,
+                        maxLines = 1
+                    )
+                    Text(
+                        text = viewModel.formatTime(app.usageTime),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                // 퍼센트 텍스트
+                Text(
+                    text = "${(app.progress * 100).toInt()}%",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // 사용량 그래프 (Progress Bar)
+            LinearProgressIndicator(
+                progress = { app.progress },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(8.dp),
+                color = MaterialTheme.colorScheme.primary,
+                trackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f),
+            )
         }
     }
 }
