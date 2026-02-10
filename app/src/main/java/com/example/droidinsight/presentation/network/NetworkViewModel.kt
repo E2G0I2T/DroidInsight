@@ -1,5 +1,6 @@
 package com.example.droidinsight.presentation.network
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.droidinsight.domain.model.NetworkModel
@@ -8,31 +9,40 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.IOException
+import java.util.Locale
 import javax.inject.Inject
-import android.util.Log
 
 @HiltViewModel
 class NetworkViewModel @Inject constructor(
     private val repository: NetworkRepository
 ) : ViewModel() {
 
-    // ... (기존 변수들: currentDownloadSpeed, uploadSpeed, history 등 유지) ...
+    companion object {
+        private const val TAG = "NetworkViewModel"
+        // 100MB 더미 파일
+        private const val TEST_FILE_URL = "https://proof.ovh.net/files/100Mb.dat"
+        private const val BUFFER_SIZE = 8192 // 8KB
+        private const val HISTORY_SIZE = 60
+    }
+
     private val _currentDownloadSpeed = MutableStateFlow(0L)
     val currentDownloadSpeed = _currentDownloadSpeed.asStateFlow()
 
     private val _currentUploadSpeed = MutableStateFlow(0L)
     val currentUploadSpeed = _currentUploadSpeed.asStateFlow()
 
-    private val _downloadHistory = MutableStateFlow<List<Long>>(List(60) { 0L })
+    private val _downloadHistory = MutableStateFlow<List<Long>>(List(HISTORY_SIZE) { 0L })
     val downloadHistory = _downloadHistory.asStateFlow()
 
-    // 측정 관련 상태
     private val _isTesting = MutableStateFlow(false)
     val isTesting = _isTesting.asStateFlow()
 
@@ -44,90 +54,87 @@ class NetworkViewModel @Inject constructor(
 
     private var totalSpeedSum = 0L
     private var sampleCount = 0
-    private var testJob: Job? = null // 테스트 취소용 Job
+    private var testJob: Job? = null
+
+    private val client by lazy { OkHttpClient() }
 
     init {
+        observeNetworkData()
+    }
+
+    private fun observeNetworkData() {
         viewModelScope.launch {
             repository.observeNetworkUsage().collect { networkModel ->
-                _currentDownloadSpeed.value = networkModel.downloadSpeed
-                _currentUploadSpeed.value = networkModel.uploadSpeed
+                updateRealtimeStats(networkModel)
 
-                val oldList = _downloadHistory.value.toMutableList()
-                if (oldList.isNotEmpty()) {
-                    oldList.removeAt(0)
-                    oldList.add(networkModel.downloadSpeed)
-                }
-                _downloadHistory.value = oldList
-
-                // 측정 중일 때 통계 계산
                 if (_isTesting.value) {
-                    val currentTotal = networkModel.downloadSpeed
-
-                    if (currentTotal > _maxSpeed.value) {
-                        _maxSpeed.value = currentTotal
-                    }
-
-                    // 0이 아닌 유효한 속도만 평균에 반영
-                    if (currentTotal > 0) {
-                        totalSpeedSum += currentTotal
-                        sampleCount++
-                        _avgSpeed.value = totalSpeedSum / sampleCount
-                    }
+                    calculateBenchmarkStats(networkModel.downloadSpeed)
                 }
             }
         }
     }
 
-    // [핵심 수정] 실제 다운로드를 걸어서 속도를 측정함
-    fun toggleTest() {
-        if (_isTesting.value) {
-            stopTest()
-        } else {
-            startTest()
+    private fun updateRealtimeStats(model: NetworkModel) {
+        _currentDownloadSpeed.value = model.downloadSpeed
+        _currentUploadSpeed.value = model.uploadSpeed
+
+        // 히스토리 업데이트
+        val currentList = _downloadHistory.value.toMutableList()
+        if (currentList.isNotEmpty()) {
+            currentList.removeAt(0)
+            currentList.add(model.downloadSpeed)
+        }
+        _downloadHistory.value = currentList
+    }
+
+    private fun calculateBenchmarkStats(currentSpeed: Long) {
+        // 최대 속도 갱신
+        if (currentSpeed > _maxSpeed.value) {
+            _maxSpeed.value = currentSpeed
+        }
+
+        // 평균 속도 갱신 (0인 구간은 제외)
+        if (currentSpeed > 0) {
+            totalSpeedSum += currentSpeed
+            sampleCount++
+            _avgSpeed.value = totalSpeedSum / sampleCount
         }
     }
 
+    fun toggleTest() {
+        if (_isTesting.value) stopTest() else startTest()
+    }
+
+    /**
+     * 원칙적으로 네트워크 요청 로직은 Repository나 UseCase에 위치해야 함
+     * 하지만 이 프로젝트에서는 'TrafficStats'의 변화를 유발하기 위한 트리거 역할이므로 편의상 ViewModel에 구현
+     */
     private fun startTest() {
+        resetBenchmarkStats()
         _isTesting.value = true
-        _maxSpeed.value = 0L
-        _avgSpeed.value = 0L
-        totalSpeedSum = 0L
-        sampleCount = 0
 
         testJob = viewModelScope.launch(Dispatchers.IO) {
-            val client = OkHttpClient()
-
-            // [수정] 가장 안정적인 테스트 파일 (HTTPS)
-            val request = Request.Builder()
-                .url("https://proof.ovh.net/files/100Mb.dat")
-                .build()
+            val request = Request.Builder().url(TEST_FILE_URL).build()
 
             try {
-                Log.d("SpeedTest", "🚀 다운로드 시작...") // 로그 확인용
+                Log.d(TAG, "🚀 Start Download Benchmark: $TEST_FILE_URL")
 
                 client.newCall(request).execute().use { response ->
-                    if (!response.isSuccessful) {
-                        Log.e("SpeedTest", "❌ 서버 응답 실패: ${response.code}")
-                        throw IOException("Unexpected code $response")
-                    }
+                    if (!response.isSuccessful) throw IOException("Unexpected code $response")
 
-                    val inputStream = response.body?.byteStream()
-                    val buffer = ByteArray(8192)
-                    var bytesRead: Int
+                    val inputStream = response.body?.byteStream() ?: return@use
+                    val buffer = ByteArray(BUFFER_SIZE)
 
-                    Log.d("SpeedTest", "✅ 연결 성공! 데이터 읽는 중...")
-
-                    // 데이터를 읽으면서 루프 (TrafficStats가 감지함)
-                    while (inputStream?.read(buffer).also { bytesRead = it ?: -1 } != -1 && _isTesting.value) {
-                        // 여기서 아무것도 안 해도 read() 하는 행위 자체가 트래픽을 유발함
+                    // 데이터를 읽어들이며 트래픽 발생 (TrafficStats가 감지함)
+                    // _isTesting이 false가 되면(중지 버튼) 루프 탈출
+                    while (isActive && _isTesting.value && inputStream.read(buffer) != -1) {
+                        // Just consume the stream
                     }
                 }
-                Log.d("SpeedTest", "🏁 다운로드 완료")
+                Log.d(TAG, "✅ Download Benchmark Finished")
 
             } catch (e: Exception) {
-                // [중요] 에러가 나면 여기에 뜹니다.
-                Log.e("SpeedTest", "❌ 에러 발생: ${e.message}", e)
-                e.printStackTrace()
+                Log.e(TAG, "❌ Benchmark Error: ${e.message}")
             } finally {
                 withContext(Dispatchers.Main) {
                     stopTest()
@@ -138,14 +145,20 @@ class NetworkViewModel @Inject constructor(
 
     fun stopTest() {
         _isTesting.value = false
-        testJob?.cancel() // 다운로드 중단
+        testJob?.cancel()
     }
 
-    // ... (formatSpeed 함수 유지) ...
+    private fun resetBenchmarkStats() {
+        _maxSpeed.value = 0L
+        _avgSpeed.value = 0L
+        totalSpeedSum = 0L
+        sampleCount = 0
+    }
+
     fun formatSpeed(bytesPerSec: Long): String {
         return when {
-            bytesPerSec >= 1024 * 1024 -> String.format("%.1f MB/s", bytesPerSec / (1024f * 1024f))
-            bytesPerSec >= 1024 -> String.format("%.1f KB/s", bytesPerSec / 1024f)
+            bytesPerSec >= 1024 * 1024 -> String.format(Locale.getDefault(), "%.1f MB/s", bytesPerSec / (1024f * 1024f))
+            bytesPerSec >= 1024 -> String.format(Locale.getDefault(), "%.1f KB/s", bytesPerSec / 1024f)
             else -> "$bytesPerSec B/s"
         }
     }

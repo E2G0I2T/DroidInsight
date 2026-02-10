@@ -1,10 +1,15 @@
 package com.example.droidinsight.presentation
 
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.*
+import androidx.compose.material3.Icon
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
@@ -13,17 +18,17 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.example.droidinsight.presentation.dashboard.DashboardScreen
 import com.example.droidinsight.presentation.navigation.BottomNavItem
-import com.example.droidinsight.presentation.network.NetworkScreen // [중요] 임포트 확인
+import com.example.droidinsight.presentation.network.NetworkScreen
 import com.example.droidinsight.presentation.usage.UsageScreen
 
 @Composable
 fun MainScreen() {
     val navController = rememberNavController()
 
-    // [핵심 수정] 여기에 BottomNavItem.Network가 포함되어야 탭이 보입니다!
-    val items = listOf(
+    // 하단 탭 목록 정의
+    val navItems = listOf(
         BottomNavItem.Dashboard,
-        BottomNavItem.Network, // 여기가 Sensor에서 Network로 바뀌었는지 확인
+        BottomNavItem.Network,
         BottomNavItem.Usage
     )
 
@@ -33,17 +38,23 @@ fun MainScreen() {
                 val navBackStackEntry by navController.currentBackStackEntryAsState()
                 val currentDestination = navBackStackEntry?.destination
 
-                items.forEach { screen ->
+                navItems.forEach { screen ->
+                    // 현재 화면이 선택된 상태인지 확인
+                    val isSelected = currentDestination?.hierarchy?.any { it.route == screen.route } == true
+
                     NavigationBarItem(
-                        icon = { Icon(screen.icon, contentDescription = null) },
-                        label = { Text(screen.title) },
-                        selected = currentDestination?.hierarchy?.any { it.route == screen.route } == true,
+                        icon = { Icon(imageVector = screen.icon, contentDescription = null) },
+                        label = { Text(text = stringResource(id = screen.titleRes)) },
+                        selected = isSelected,
                         onClick = {
                             navController.navigate(screen.route) {
+                                // 1. 백스택 관리: 홈(StartDestination)까지만 남기고 스택 제거
                                 popUpTo(navController.graph.findStartDestination().id) {
                                     saveState = true
                                 }
+                                // 2. 중복 방지: 이미 선택된 탭을 다시 누르면 새 창을 띄우지 않음
                                 launchSingleTop = true
+                                // 3. 상태 복원: 스크롤 위치 등 이전 상태 복구
                                 restoreState = true
                             }
                         }
@@ -52,22 +63,18 @@ fun MainScreen() {
             }
         }
     ) { innerPadding ->
+        // 내비게이션 호스트
         NavHost(
             navController = navController,
             startDestination = BottomNavItem.Dashboard.route,
             modifier = Modifier.padding(innerPadding)
         ) {
-            // 1. 대시보드
             composable(BottomNavItem.Dashboard.route) {
                 DashboardScreen()
             }
-
-            // 2. 네트워크 (여기도 연결 확인!)
             composable(BottomNavItem.Network.route) {
                 NetworkScreen()
             }
-
-            // 3. 앱 통계
             composable(BottomNavItem.Usage.route) {
                 UsageScreen()
             }

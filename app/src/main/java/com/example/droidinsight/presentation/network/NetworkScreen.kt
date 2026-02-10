@@ -5,23 +5,30 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.*
-import androidx.compose.runtime.* // [필수] getValue, setValue, remember 등을 위해 * 사용
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.res.stringResource // [필수] stringResource 에러 해결
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.example.droidinsight.R // [필수] R 클래스 임포트 (패키지명 확인하세요!)
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import com.example.droidinsight.R
 import com.example.droidinsight.presentation.component.NetworkLineChart
 
+/**
+ * 네트워크 화면의 진입점
+ * ViewModel과 생명주기를 관리하고, 데이터를 수집하여 Stateless 컴포넌트에 전달
+ */
 @Composable
 fun NetworkScreen(
     viewModel: NetworkViewModel = hiltViewModel()
 ) {
-    // ViewModel 상태 구독
+    // 1. 상태 수집
     val currentDownload by viewModel.currentDownloadSpeed.collectAsState()
     val currentUpload by viewModel.currentUploadSpeed.collectAsState()
     val downloadHistory by viewModel.downloadHistory.collectAsState()
@@ -30,29 +37,60 @@ fun NetworkScreen(
     val maxSpeed by viewModel.maxSpeed.collectAsState()
     val avgSpeed by viewModel.avgSpeed.collectAsState()
 
-    // [추가] 다이얼로그 표시 여부 상태 (by remember 에러 해결됨)
+    // 2. 다이얼로그 상태 관리
     var showWarningDialog by remember { mutableStateOf(false) }
 
-    // 생명주기 처리 (앱이 백그라운드로 가면 측정 중지)
-    val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+    // 3. 생명주기 감지 (화면 벗어나면 테스트 중단)
+    val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
-        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
-            if (event == androidx.lifecycle.Lifecycle.Event.ON_STOP || event == androidx.lifecycle.Lifecycle.Event.ON_DESTROY) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP || event == Lifecycle.Event.ON_DESTROY) {
                 viewModel.stopTest()
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose {
-            lifecycleOwner.lifecycle.removeObserver(observer)
-        }
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
+    // 4. UI 그리기 위임
+    NetworkContent(
+        downloadSpeed = currentDownload,
+        uploadSpeed = currentUpload,
+        downloadHistory = downloadHistory,
+        isTesting = isTesting,
+        maxSpeed = maxSpeed,
+        avgSpeed = avgSpeed,
+        showDialog = showWarningDialog,
+        onToggleTest = viewModel::toggleTest,
+        onDialogDismiss = { showWarningDialog = false },
+        onShowDialog = { showWarningDialog = true },
+        formatSpeed = viewModel::formatSpeed
+    )
+}
+
+/**
+ * 실제 UI를 그리는 컴포넌트
+ * ViewModel 의존성이 없어서 Preview 및 재사용이 가능
+ */
+@Composable
+private fun NetworkContent(
+    downloadSpeed: Long,
+    uploadSpeed: Long,
+    downloadHistory: List<Long>,
+    isTesting: Boolean,
+    maxSpeed: Long,
+    avgSpeed: Long,
+    showDialog: Boolean,
+    onToggleTest: () -> Unit,
+    onDialogDismiss: () -> Unit,
+    onShowDialog: () -> Unit,
+    formatSpeed: (Long) -> String
+) {
     Column(
         modifier = Modifier
             .fillMaxSize()
             .padding(16.dp)
     ) {
-        // [수정] 문자열 리소스 사용
         Text(
             text = stringResource(R.string.network_title),
             style = MaterialTheme.typography.headlineMedium,
@@ -62,7 +100,7 @@ fun NetworkScreen(
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        // 1. 실시간 그래프
+        // 1. 실시간 그래프 카드
         Card(
             colors = CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
@@ -86,14 +124,14 @@ fun NetworkScreen(
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        // 2. 현재 속도 카드들
+        // 2. 현재 속도 표시 (다운로드/업로드)
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             CompactSpeedCard(
-                title = "Download",
-                speed = viewModel.formatSpeed(currentDownload),
+                title = stringResource(R.string.network_download),
+                speed = formatSpeed(downloadSpeed),
                 icon = Icons.Default.KeyboardArrowDown,
                 color = Color(0xFF00E676),
                 modifier = Modifier.weight(1f)
@@ -102,8 +140,8 @@ fun NetworkScreen(
             Spacer(modifier = Modifier.width(16.dp))
 
             CompactSpeedCard(
-                title = "Upload",
-                speed = viewModel.formatSpeed(currentUpload),
+                title = stringResource(R.string.network_upload),
+                speed = formatSpeed(uploadSpeed),
                 icon = Icons.Default.KeyboardArrowUp,
                 color = Color(0xFF2979FF),
                 modifier = Modifier.weight(1f)
@@ -112,70 +150,36 @@ fun NetworkScreen(
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        // 3. 속도 측정(Benchmark) 섹션
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
-        ) {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text(stringResource(R.string.network_benchmark), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                Spacer(modifier = Modifier.height(16.dp))
-
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(stringResource(R.string.network_max), style = MaterialTheme.typography.labelSmall)
-                        Text(viewModel.formatSpeed(maxSpeed), style = MaterialTheme.typography.titleMedium)
-                    }
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(stringResource(R.string.network_avg), style = MaterialTheme.typography.labelSmall)
-                        Text(viewModel.formatSpeed(avgSpeed), style = MaterialTheme.typography.titleMedium)
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // [수정] 다이얼로그 로직 적용된 버튼
-                Button(
-                    onClick = {
-                        if (isTesting) {
-                            viewModel.toggleTest()
-                        } else {
-                            showWarningDialog = true
-                        }
-                    },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (isTesting) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
-                    )
-                ) {
-                    // [수정] 문자열 리소스 사용
-                    Text(if (isTesting) stringResource(R.string.btn_stop_test) else stringResource(R.string.btn_start_test))
-                }
+        // 3. 벤치마크 컨트롤러
+        BenchmarkCard(
+            maxSpeed = formatSpeed(maxSpeed),
+            avgSpeed = formatSpeed(avgSpeed),
+            isTesting = isTesting,
+            onActionClick = {
+                if (isTesting) onToggleTest() else onShowDialog()
             }
-        }
+        )
     }
 
-    // [추가] 경고 다이얼로그
-    if (showWarningDialog) {
+    // 경고 다이얼로그
+    if (showDialog) {
         AlertDialog(
-            onDismissRequest = { showWarningDialog = false },
-            title = { Text(text = "데이터 사용 경고") },
-            text = { Text(text = "속도 측정을 위해 약 100MB의 데이터를 다운로드합니다.\n데이터 요금이 부과될 수 있습니다.\n계속하시겠습니까?") },
+            onDismissRequest = onDialogDismiss,
+            title = { Text(text = stringResource(R.string.dialog_warning_title)) },
+            text = { Text(text = stringResource(R.string.dialog_warning_msg)) },
             confirmButton = {
                 TextButton(
                     onClick = {
-                        showWarningDialog = false
-                        viewModel.toggleTest() // 진짜 시작
+                        onDialogDismiss()
+                        onToggleTest()
                     }
                 ) {
-                    Text("시작")
+                    Text(stringResource(R.string.dialog_confirm))
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showWarningDialog = false }) {
-                    Text("취소")
+                TextButton(onClick = onDialogDismiss) {
+                    Text(stringResource(R.string.dialog_cancel))
                 }
             }
         )
@@ -183,7 +187,59 @@ fun NetworkScreen(
 }
 
 @Composable
-fun CompactSpeedCard(
+private fun BenchmarkCard(
+    maxSpeed: String,
+    avgSpeed: String,
+    isTesting: Boolean,
+    onActionClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                text = stringResource(R.string.network_benchmark),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                SpeedStatItem(label = stringResource(R.string.network_max), value = maxSpeed)
+                SpeedStatItem(label = stringResource(R.string.network_avg), value = avgSpeed)
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Button(
+                onClick = onActionClick,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (isTesting) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                )
+            ) {
+                Text(
+                    if (isTesting) stringResource(R.string.btn_stop_test)
+                    else stringResource(R.string.btn_start_test)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SpeedStatItem(label: String, value: String) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(text = label, style = MaterialTheme.typography.labelSmall)
+        Text(text = value, style = MaterialTheme.typography.titleMedium)
+    }
+}
+
+@Composable
+private fun CompactSpeedCard(
     title: String,
     speed: String,
     icon: ImageVector,

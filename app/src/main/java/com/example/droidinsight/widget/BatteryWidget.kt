@@ -6,34 +6,34 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.datastore.preferences.core.Preferences
+import androidx.glance.ColorFilter
 import androidx.glance.GlanceId
 import androidx.glance.GlanceModifier
+import androidx.glance.Image
+import androidx.glance.ImageProvider
 import androidx.glance.action.clickable
 import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.action.actionRunCallback
+import androidx.glance.appwidget.cornerRadius
 import androidx.glance.appwidget.provideContent
 import androidx.glance.background
+import androidx.glance.color.ColorProvider
 import androidx.glance.currentState
 import androidx.glance.layout.Alignment
 import androidx.glance.layout.Box
 import androidx.glance.layout.Column
+import androidx.glance.layout.Row
 import androidx.glance.layout.Spacer
 import androidx.glance.layout.fillMaxSize
 import androidx.glance.layout.height
 import androidx.glance.layout.padding
+import androidx.glance.layout.size
+import androidx.glance.layout.width
 import androidx.glance.state.PreferencesGlanceStateDefinition
 import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
-import androidx.glance.unit.ColorProvider
-import androidx.glance.Image // 추가
-import androidx.glance.ImageProvider // 추가
-import androidx.glance.layout.Row // 추가
-import androidx.glance.layout.size // 추가
-import com.example.droidinsight.R // 리소스 임포트
-import androidx.glance.layout.width // [필수] 이거 한 줄이면 해결됩니다!
-import androidx.glance.layout.height // 혹시 없으면 이것도
-import androidx.glance.layout.size // 아이콘 사이즈 조절용
 
 class BatteryWidget : GlanceAppWidget() {
 
@@ -41,99 +41,113 @@ class BatteryWidget : GlanceAppWidget() {
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         provideContent {
-            val prefs = currentState<androidx.datastore.preferences.core.Preferences>()
-            val mode = prefs[WidgetKeys.CURRENT_MODE] ?: 0
-            val lastUpdated = prefs[WidgetKeys.LAST_UPDATED] ?: 0L
+            val prefs = currentState<Preferences>()
+            val modeIndex = prefs[WidgetKeys.CURRENT_MODE] ?: 0
 
-            val info = when(mode) {
-                0 -> getBatteryInfo(context) // 여기서는 lastUpdated를 안 써도, 위에서 읽었으니 재실행됨
-                1 -> getRamInfo(context)
-                else -> "Err"
+            // Enum 변환
+            val currentMode = if (modeIndex == 0) WidgetMode.Battery else WidgetMode.Ram
+
+            val (title, infoValue) = when (currentMode) {
+                WidgetMode.Battery -> "Battery" to getBatteryLevel(context)
+                WidgetMode.Ram -> "RAM Usage" to getRamUsage(context)
             }
 
-            val title = when(mode) {
-                0 -> "Battery ↻"
-                1 -> "RAM Usage ↻"
-                else -> "Info"
-            }
-
-            WidgetContent(title, info)
+            WidgetContent(
+                title = title,
+                info = "$infoValue%",
+                isBatteryMode = currentMode == WidgetMode.Battery
+            )
         }
     }
 
     @Composable
-    fun WidgetContent(title: String, info: String) {
+    private fun WidgetContent(
+        title: String,
+        info: String,
+        isBatteryMode: Boolean
+    ) {
+        val backgroundColor = Color.DarkGray
+        val accentColor = if (isBatteryMode) Color(0xFF00E676) else Color(0xFF2979FF)
+        val bgProvider = ColorProvider(day = backgroundColor, night = backgroundColor)
+        val textProvider = ColorProvider(day = Color.White, night = Color.White)
+        val accentProvider = ColorProvider(day = accentColor, night = accentColor)
+        val iconTintProvider = ColorProvider(day = Color.LightGray, night = Color.LightGray)
+
         Box(
             modifier = GlanceModifier
                 .fillMaxSize()
-                .background(ColorProvider(Color.DarkGray))
+                .background(bgProvider)
+                .cornerRadius(16.dp)
                 .padding(12.dp),
             contentAlignment = Alignment.Center
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
 
-                // [1. 상단] 모드 변경 버튼 (제목 + 아이콘)
-                // "Battery" 글자나 옆의 아이콘을 누르면 모드가 바뀜
+                // [Header] 타이틀 + 모드 변경 버튼
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = GlanceModifier.clickable(actionRunCallback<ToggleAction>()) // 전체 클릭 가능
+                    modifier = GlanceModifier.clickable(actionRunCallback<ToggleAction>())
                 ) {
                     Text(
-                        text = title.replace(" ↻", ""),
-                        style = TextStyle(color = ColorProvider(Color.White), fontWeight = FontWeight.Bold)
+                        text = title,
+                        style = TextStyle(
+                            color = textProvider,
+                            fontWeight = FontWeight.Medium,
+                            fontSize = 14.sp
+                        )
                     )
                     Spacer(modifier = GlanceModifier.width(4.dp))
-
-                    // 작은 전환 아이콘
                     Image(
                         provider = ImageProvider(android.R.drawable.ic_menu_sort_by_size),
-                        contentDescription = "Change Mode",
+                        contentDescription = "Switch Mode",
                         modifier = GlanceModifier.size(16.dp),
-                        colorFilter = androidx.glance.ColorFilter.tint(ColorProvider(Color.White))
+                        colorFilter = ColorFilter.tint(iconTintProvider)
                     )
                 }
 
-                Spacer(modifier = GlanceModifier.height(12.dp))
+                Spacer(modifier = GlanceModifier.height(8.dp))
 
-                // [2. 하단] 새로고침 버튼 (값 + 아이콘)
-                // 값을 누르면 새로고침됨
+                // [Body] 값 표시 + 새로고침 버튼
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = GlanceModifier.clickable(actionRunCallback<RefreshAction>()) // 전체 클릭 가능
+                    modifier = GlanceModifier.clickable(actionRunCallback<RefreshAction>())
                 ) {
                     Text(
                         text = info,
                         style = TextStyle(
-                            color = ColorProvider(Color(0xFF00E676)),
-                            fontSize = 28.sp, // 글자 더 크게
+                            color = accentProvider,
+                            fontSize = 26.sp,
                             fontWeight = FontWeight.Bold
                         )
                     )
                     Spacer(modifier = GlanceModifier.width(8.dp))
-
-                    // 큰 새로고침 아이콘 (회전 화살표)
                     Image(
-                        provider = ImageProvider(android.R.drawable.ic_popup_sync), // 동기화 아이콘
+                        provider = ImageProvider(android.R.drawable.ic_popup_sync),
                         contentDescription = "Refresh",
-                        modifier = GlanceModifier.size(24.dp),
-                        colorFilter = androidx.glance.ColorFilter.tint(ColorProvider(Color(0xFF00E676))) // 색깔 맞춤
+                        modifier = GlanceModifier.size(20.dp),
+                        // [수정] ColorFilter 참조 에러 해결
+                        colorFilter = ColorFilter.tint(accentProvider)
                     )
                 }
             }
         }
     }
 
-    private fun getBatteryInfo(context: Context): String {
+    private fun getBatteryLevel(context: Context): Int {
         val manager = context.getSystemService(Context.BATTERY_SERVICE) as BatteryManager
-        val level = manager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
-        return "$level%"
+        return manager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
     }
 
-    private fun getRamInfo(context: Context): String {
+    private fun getRamUsage(context: Context): Int {
         val actManager = context.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
         val memInfo = android.app.ActivityManager.MemoryInfo()
         actManager.getMemoryInfo(memInfo)
-        val percent = ((memInfo.totalMem - memInfo.availMem) * 100 / memInfo.totalMem).toInt()
-        return "$percent%"
+
+        if (memInfo.totalMem == 0L) return 0
+        return ((memInfo.totalMem - memInfo.availMem) * 100 / memInfo.totalMem).toInt()
+    }
+
+    enum class WidgetMode(val index: Int) {
+        Battery(0), Ram(1)
     }
 }

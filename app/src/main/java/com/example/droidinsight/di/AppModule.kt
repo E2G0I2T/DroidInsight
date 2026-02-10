@@ -22,55 +22,43 @@ import javax.inject.Singleton
 @InstallIn(SingletonComponent::class)
 object AppModule {
 
-    // 1. 데이터베이스 (10일차 추가)
+    private const val DATABASE_NAME = "droid_insight.db"
+
     @Provides
     @Singleton
     fun provideAppDatabase(@ApplicationContext context: Context): AppDatabase {
         return Room.databaseBuilder(
             context,
             AppDatabase::class.java,
-            "droid_insight_db"
-        ).build()
+            DATABASE_NAME
+        ).fallbackToDestructiveMigration() // 스키마 변경 시 충돌 방지
+            .build()
     }
 
-    // 2. DAO (10일차 추가)
     @Provides
-    fun provideUsageDao(database: AppDatabase): UsageDao {
-        return database.usageDao()
-    }
+    @Singleton
+    fun provideUsageDao(database: AppDatabase): UsageDao = database.usageDao()
 
-    // 3. 배터리 리포지토리
     @Provides
     @Singleton
     fun provideBatteryRepository(
         @ApplicationContext context: Context
-    ): BatteryRepository {
-        return BatteryRepositoryImpl(context)
-    }
+    ): BatteryRepository = BatteryRepositoryImpl(context)
 
-    // 4. 앱 사용 통계 리포지토리 (여기가 에러 났던 곳!)
     @Provides
     @Singleton
-    fun provideUsageRepository(
-        @ApplicationContext context: Context,
-        usageDao: UsageDao // [수정] DAO를 받아서
-    ): UsageRepository {
-        return UsageRepositoryImpl(context, usageDao) // [수정] 생성자에 넣어줌
-    }
+    fun provideNetworkRepository(): NetworkRepository = NetworkRepositoryImpl()
 
-    // 5. 시스템 정보 리포지토리
     @Provides
     @Singleton
     fun provideSystemRepository(
         @ApplicationContext context: Context
-    ): SystemRepository {
-        return SystemRepository(context)
-    }
+    ): SystemRepository = SystemRepository(context)
 
-    // 6. 네트워크 리포지토리
     @Provides
     @Singleton
-    fun provideNetworkRepository(): NetworkRepository {
-        return NetworkRepositoryImpl()
-    }
+    fun provideUsageRepository(
+        @ApplicationContext context: Context,
+        usageDao: UsageDao
+    ): UsageRepository = UsageRepositoryImpl(context, usageDao)
 }

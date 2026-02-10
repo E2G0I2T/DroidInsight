@@ -10,15 +10,21 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.example.droidinsight.R
+import com.example.droidinsight.domain.model.BatteryModel
 import com.example.droidinsight.domain.model.SystemInfo
 
+/**
+ * 대시보드 화면의 진입점
+ * ViewModel에서 데이터를 수집하여 Stateless 컴포넌트인 DashboardContent에 전달
+ */
 @Composable
 fun DashboardScreen(
     viewModel: DashboardViewModel = hiltViewModel()
@@ -26,14 +32,31 @@ fun DashboardScreen(
     val batteryInfo by viewModel.batteryState.collectAsState()
     val systemInfo by viewModel.systemInfo.collectAsState()
 
+    DashboardContent(
+        batteryInfo = batteryInfo,
+        systemInfo = systemInfo,
+        formatSize = viewModel::formatSize
+    )
+}
+
+/**
+ * 실제 UI를 그리는 컴포넌트
+ * ViewModel 의존성이 없으므로 Preview 및 테스트가 용이
+ */
+@Composable
+private fun DashboardContent(
+    batteryInfo: BatteryModel,
+    systemInfo: SystemInfo,
+    formatSize: (Long) -> String
+) {
     Column(
         modifier = Modifier
             .fillMaxSize()
             .padding(16.dp)
-            .verticalScroll(rememberScrollState()) // 스크롤 가능
+            .verticalScroll(rememberScrollState())
     ) {
         Text(
-            text = "Droid Insight",
+            text = stringResource(R.string.app_name),
             style = MaterialTheme.typography.headlineLarge,
             color = MaterialTheme.colorScheme.primary,
             fontWeight = FontWeight.Bold
@@ -41,56 +64,58 @@ fun DashboardScreen(
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        // 1. 기기 기본 정보
-        InfoCard(title = "Device Specs") {
-            SpecRow("Model", systemInfo.modelName)
-            SpecRow("Manufacturer", systemInfo.manufacturer)
-            SpecRow("OS Version", systemInfo.androidVersion)
+        // 1. 기기 기본 정보 섹션
+        InfoCard(title = stringResource(R.string.dashboard_device_specs)) {
+            SpecRow(stringResource(R.string.spec_model), systemInfo.modelName)
+            SpecRow(stringResource(R.string.spec_manufacturer), systemInfo.manufacturer)
+            SpecRow(stringResource(R.string.spec_os), systemInfo.androidVersion)
         }
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // 2. 배터리 정보
-        InfoCard(title = "Battery Status") {
-            val chargingText = if (batteryInfo.isCharging) "Charging ⚡" else "Discharging"
-            val chargingColor = if (batteryInfo.isCharging) Color.Green else MaterialTheme.colorScheme.onSurface
+        // 2. 배터리 정보 섹션
+        InfoCard(title = stringResource(R.string.dashboard_battery_status)) {
+            val chargingText = if (batteryInfo.isCharging) stringResource(R.string.battery_charging)
+            else stringResource(R.string.battery_discharging)
+            val chargingColor = if (batteryInfo.isCharging) Color.Green
+            else MaterialTheme.colorScheme.onSurface
 
-            SpecRow("Level", "${batteryInfo.level}%")
-            SpecRow("Status", chargingText, valueColor = chargingColor)
-            SpecRow("Temp", "${batteryInfo.temperature} °C")
-            SpecRow("Voltage", "${batteryInfo.voltage} mV")
-            SpecRow("Health", batteryInfo.health)
+            SpecRow(stringResource(R.string.spec_level), "${batteryInfo.level}%")
+            SpecRow(stringResource(R.string.spec_status), chargingText, valueColor = chargingColor)
+            SpecRow(stringResource(R.string.spec_temp), "${batteryInfo.temperature} °C")
+            SpecRow(stringResource(R.string.spec_voltage), "${batteryInfo.voltage} mV")
+            SpecRow(stringResource(R.string.spec_health), batteryInfo.health)
         }
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // 3. 시스템 리소스 (RAM & Storage)
-        InfoCard(title = "System Resources") {
+        // 3. 시스템 리소스 섹션
+        InfoCard(title = stringResource(R.string.dashboard_system_resources)) {
             // RAM Usage
+            val usedRam = systemInfo.totalRam - systemInfo.availableRam
             ResourceBar(
-                label = "RAM",
+                label = stringResource(R.string.resource_ram),
                 usagePercent = systemInfo.ramUsagePercent,
-                usageText = "${viewModel.formatSize(systemInfo.totalRam - systemInfo.availableRam)} / ${viewModel.formatSize(systemInfo.totalRam)}"
+                usageText = "${formatSize(usedRam)} / ${formatSize(systemInfo.totalRam)}"
             )
 
             Spacer(modifier = Modifier.height(16.dp))
 
             // Storage Usage
+            val usedStorage = systemInfo.totalStorage - systemInfo.availableStorage
             ResourceBar(
-                label = "Internal Storage",
+                label = stringResource(R.string.resource_storage),
                 usagePercent = systemInfo.storageUsagePercent,
-                usageText = "${viewModel.formatSize(systemInfo.totalStorage - systemInfo.availableStorage)} / ${viewModel.formatSize(systemInfo.totalStorage)}"
+                usageText = "${formatSize(usedStorage)} / ${formatSize(systemInfo.totalStorage)}"
             )
         }
 
-        // 하단 여백 확보
         Spacer(modifier = Modifier.height(32.dp))
     }
 }
 
-// [공통 컴포넌트] 카드 UI
 @Composable
-fun InfoCard(
+private fun InfoCard(
     title: String,
     content: @Composable ColumnScope.() -> Unit
 ) {
@@ -113,22 +138,46 @@ fun InfoCard(
     }
 }
 
-// [공통 컴포넌트] 텍스트 한 줄
 @Composable
-fun SpecRow(label: String, value: String, valueColor: Color = MaterialTheme.colorScheme.onSurface) {
+private fun SpecRow(
+    label: String,
+    value: String,
+    valueColor: Color = MaterialTheme.colorScheme.onSurface
+) {
     Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Text(text = label, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(text = value, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, color = valueColor)
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = valueColor
+        )
     }
 }
 
-// [공통 컴포넌트] 리소스 게이지 바
 @Composable
-fun ResourceBar(label: String, usagePercent: Float, usageText: String) {
-    val animatedProgress by animateFloatAsState(targetValue = usagePercent, label = "progress")
+private fun ResourceBar(
+    label: String,
+    usagePercent: Float,
+    usageText: String
+) {
+    val animatedProgress by animateFloatAsState(
+        targetValue = usagePercent,
+        label = "ResourceProgress"
+    )
+
+    // 85% 이상 사용 시 경고색(빨강), 아니면 기본색(파랑)
+    val barColor = if (usagePercent > 0.85f) MaterialTheme.colorScheme.error
+    else MaterialTheme.colorScheme.primary
 
     Column {
         Row(
@@ -140,7 +189,6 @@ fun ResourceBar(label: String, usagePercent: Float, usageText: String) {
         }
         Spacer(modifier = Modifier.height(8.dp))
 
-        // 프로그레스 바 배경
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -148,16 +196,12 @@ fun ResourceBar(label: String, usagePercent: Float, usageText: String) {
                 .clip(RoundedCornerShape(5.dp))
                 .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
         ) {
-            // 실제 사용량 (채워지는 부분)
             Box(
                 modifier = Modifier
                     .fillMaxWidth(animatedProgress)
                     .fillMaxHeight()
                     .clip(RoundedCornerShape(5.dp))
-                    .background(
-                        if (usagePercent > 0.85f) MaterialTheme.colorScheme.error // 85% 넘으면 빨간색
-                        else MaterialTheme.colorScheme.primary
-                    )
+                    .background(barColor)
             )
         }
     }

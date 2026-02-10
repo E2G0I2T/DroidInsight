@@ -9,15 +9,15 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface UsageDao {
-    // 데이터 삽입 (이미 있으면 덮어쓰기 REPLACE)
+
+    // 중복 데이터는 덮어쓰기 (REPLACE)
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertUsageStats(stats: List<UsageEntity>)
 
-    // 특정 날짜의 데이터 조회
+    // 해당 날짜 데이터 조회 (사용 시간 많은 순 정렬)
     @Query("SELECT * FROM usage_stats WHERE date = :date ORDER BY usageTime DESC")
     fun getUsageStatsByDate(date: Long): Flow<List<UsageEntity>>
 
-    // 저장된 모든 데이터 삭제 (초기화용)
     @Query("DELETE FROM usage_stats")
     suspend fun clearAll()
 }

@@ -23,4 +23,32 @@
     <string name="dialog_warning_msg">속도 측정을 위해 약 100MB의 데이터를 다운로드합니다.\n데이터 요금이 부과될 수 있습니다.\n계속하시겠습니까?</string>
     <string name="dialog_confirm">시작</string>
     <string name="dialog_cancel">취소</string>
+
+    <string name="dashboard_device_specs">Device Specs</string>
+    <string name="dashboard_battery_status">Battery Status</string>
+    <string name="dashboard_system_resources">System Resources</string>
+
+    <string name="spec_model">Model</string>
+    <string name="spec_manufacturer">Manufacturer</string>
+    <string name="spec_os">OS Version</string>
+
+    <string name="spec_level">Level</string>
+    <string name="spec_status">Status</string>
+    <string name="spec_temp">Temp</string>
+    <string name="spec_voltage">Voltage</string>
+    <string name="spec_health">Health</string>
+
+    <string name="battery_charging">Charging ⚡</string>
+    <string name="battery_discharging">Discharging</string>
+
+    <string name="resource_ram">RAM</string>
+    <string name="resource_storage">Internal Storage</string>
+
+    <string name="nav_dashboard">Dashboard</string>
+    <string name="nav_usage">Usage</string>
+    <string name="nav_network">Network</string>
+
+    <string name="network_download">Download</string>
+    <string name="network_upload">Upload</string>
+    <string name="usage_top5">Top 5 사용량 비교</string>
 </resources>

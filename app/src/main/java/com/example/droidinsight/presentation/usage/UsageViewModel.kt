@@ -15,45 +15,37 @@ class UsageViewModel @Inject constructor(
     private val repository: UsageRepository
 ) : ViewModel() {
 
+    // 1. UI 상태 (앱 목록)
     private val _uiState = MutableStateFlow<List<UsageModel>>(emptyList())
     val uiState = _uiState.asStateFlow()
 
+    // 2. 권한 상태
     private val _hasPermission = MutableStateFlow(false)
     val hasPermission = _hasPermission.asStateFlow()
 
-    // 화면이 뜰 때마다 권한 체크 & 데이터 로드
+    /**
+     * 화면이 포커스를 받을 때마다 호출
+     * 권한이 있는지 확인하고, 있다면 최신 데이터를 로드
+     */
     fun checkPermissionAndLoadData() {
-        _hasPermission.value = repository.hasPermission()
-        if (_hasPermission.value) {
+        val isAllowed = repository.hasPermission()
+        _hasPermission.value = isAllowed
+
+        if (isAllowed) {
             loadUsageStats()
         }
     }
 
     private fun loadUsageStats() {
         viewModelScope.launch {
-            val rawList = repository.getTodayUsageStats()
-
-            // 데이터가 하나도 없으면 빈 리스트 처리
-            if (rawList.isEmpty()) {
-                _uiState.value = emptyList()
-                return@launch
-            }
-
-            // 1. 가장 오래 쓴 앱의 시간 찾기 (이게 기준값 1.0이 됨)
-            val maxUsageTime = rawList.first().usageTime.toFloat()
-
-            // 2. 각 앱의 비율(progress) 계산해서 업데이트
-            val processedList = rawList.map { model ->
-                model.copy(
-                    progress = if (maxUsageTime > 0) (model.usageTime / maxUsageTime) else 0f
-                )
-            }
-
-            _uiState.value = processedList
+            _uiState.value = repository.getTodayUsageStats()
         }
     }
 
-    // 시간 포맷팅 헬퍼 함수 (예: 1시간 30분 10초)
+    /**
+     * 밀리초(ms) 단위를 "1시간 30분" 같은 문자열로 변환
+     * View에서 로직을 처리하지 않도록 ViewModel이 변환을 담당
+     */
     fun formatTime(millis: Long): String {
         val seconds = millis / 1000
         val minutes = seconds / 60

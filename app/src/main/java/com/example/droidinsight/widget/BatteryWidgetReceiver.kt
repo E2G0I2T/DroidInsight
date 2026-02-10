@@ -3,7 +3,10 @@ package com.example.droidinsight.presentation.widget
 import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.GlanceAppWidgetReceiver
 
+/**
+ * 홈 화면 위젯의 Broadcast Receiver
+ * AndroidManifest.xml에 <receiver> 태그로 등록되어야 작동*
+ */
 class BatteryWidgetReceiver : GlanceAppWidgetReceiver() {
-    // 우리가 만들 위젯 UI 클래스를 연결해줍니다.
     override val glanceAppWidget: GlanceAppWidget = BatteryWidget()
 }

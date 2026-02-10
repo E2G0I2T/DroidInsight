@@ -1,7 +1,6 @@
 package com.example.droidinsight.domain.repository
 
 import com.example.droidinsight.domain.model.UsageModel
-import kotlinx.coroutines.flow.Flow
 
 interface UsageRepository {
     // 권한이 있는지 확인

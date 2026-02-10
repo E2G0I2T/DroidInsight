@@ -1,24 +1,27 @@
 package com.example.droidinsight.data.repository
 
 import android.app.AppOpsManager
+import android.app.usage.UsageStats
 import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.content.pm.PackageManager
+import android.graphics.drawable.Drawable
 import android.os.Process
-import com.example.droidinsight.data.local.dao.UsageDao // 추가
-import com.example.droidinsight.data.local.entity.UsageEntity // 추가
+import com.example.droidinsight.data.local.dao.UsageDao
+import com.example.droidinsight.data.local.entity.UsageEntity
 import com.example.droidinsight.domain.model.UsageModel
 import com.example.droidinsight.domain.repository.UsageRepository
+import dagger.hilt.android.qualifiers.ApplicationContext
 import java.util.Calendar
 import javax.inject.Inject
 
 class UsageRepositoryImpl @Inject constructor(
-    private val context: Context,
-    private val usageDao: UsageDao // [추가] DB 접근 도구 주입
+    @ApplicationContext private val context: Context,
+    private val usageDao: UsageDao
 ) : UsageRepository {
 
+    // 사용자가 앱 사용 정보 접근 권한(PACKAGE_USAGE_STATS)을 허용했는지 확인
     override fun hasPermission(): Boolean {
-        // ... (기존 코드와 동일) ...
         val appOps = context.getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager
         val mode = appOps.checkOpNoThrow(
             AppOpsManager.OPSTR_GET_USAGE_STATS,
@@ -29,71 +32,94 @@ class UsageRepositoryImpl @Inject constructor(
     }
 
     override suspend fun getTodayUsageStats(): List<UsageModel> {
-        val usageStatsManager = context.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
-        val packageManager = context.packageManager
+        val (startTime, endTime) = getTodayTimeRange()
 
-        // 시간 설정 (오늘 0시)
+        // 1. 시스템 API에서 Raw 데이터 가져오기
+        val systemUsageList = querySystemUsage(startTime, endTime)
+            .filter { it.totalTimeInForeground > 0 } // 사용 안 한 앱 제외
+            .sortedByDescending { it.totalTimeInForeground }
+
+        if (systemUsageList.isEmpty()) return emptyList()
+
+        // 2. UI 표시용 데이터로 가공 (이름, 아이콘, 비율 계산)
+        val maxUsageTime = systemUsageList.first().totalTimeInForeground.toFloat()
+        val usageModels = systemUsageList.map { usageStats ->
+            mapToDomainModel(usageStats, maxUsageTime)
+        }
+
+        // 3. DB에 백업 (실패해도 앱 동작에는 영향 없도록 예외 처리)
+        cacheToDatabase(usageModels, startTime)
+
+        return usageModels
+    }
+
+    private fun getTodayTimeRange(): Pair<Long, Long> {
         val calendar = Calendar.getInstance()
         val endTime = calendar.timeInMillis
+
         calendar.set(Calendar.HOUR_OF_DAY, 0)
         calendar.set(Calendar.MINUTE, 0)
         calendar.set(Calendar.SECOND, 0)
+        calendar.set(Calendar.MILLISECOND, 0)
         val startTime = calendar.timeInMillis
 
-        // 1. 시스템 API에서 데이터 가져오기
-        val usageStatsList = usageStatsManager.queryUsageStats(
+        return Pair(startTime, endTime)
+    }
+
+    private fun querySystemUsage(start: Long, end: Long): List<UsageStats> {
+        val usageStatsManager = context.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
+        return usageStatsManager.queryUsageStats(
             UsageStatsManager.INTERVAL_DAILY,
-            startTime,
-            endTime
+            start,
+            end
+        ) ?: emptyList()
+    }
+
+    private fun mapToDomainModel(usageStats: UsageStats, maxTime: Float): UsageModel {
+        val pm = context.packageManager
+        val packageName = usageStats.packageName
+
+        // 앱 이름 가져오기 (실패 시 패키지명 -> 포맷팅)
+        val appName = try {
+            val appInfo = pm.getApplicationInfo(packageName, 0)
+            val label = pm.getApplicationLabel(appInfo).toString()
+            formatAppName(label, packageName)
+        } catch (e: Exception) {
+            formatAppName(packageName, packageName)
+        }
+
+        // 아이콘 가져오기
+        val icon: Drawable? = try {
+            pm.getApplicationIcon(packageName)
+        } catch (e: Exception) {
+            null
+        }
+
+        return UsageModel(
+            packageName = packageName,
+            appName = appName,
+            usageTime = usageStats.totalTimeInForeground,
+            lastTimeUsed = usageStats.lastTimeUsed,
+            appIcon = icon,
+            progress = usageStats.totalTimeInForeground / maxTime
         )
+    }
 
-        // 2. 데이터 가공 (모델 변환)
-        val resultList = usageStatsList
-            .filter { it.totalTimeInForeground > 0 }
-            .sortedByDescending { it.totalTimeInForeground }
-            .map { usageStats ->
-                // 1. 진짜 이름 가져오기 시도
-                var appName = try {
-                    packageManager.getApplicationLabel(
-                        packageManager.getApplicationInfo(usageStats.packageName, 0)
-                    ).toString()
-                } catch (e: Exception) {
-                    usageStats.packageName // 실패 시 패키지명
-                }
+    // "com.google.android.youtube" -> "Youtube" 로 변환하는 로직
+    private fun formatAppName(originalName: String, packageName: String): String {
+        return if (originalName.contains("com.") || originalName.contains(".")) {
+            packageName.substringAfterLast('.')
+                .replaceFirstChar { it.uppercase() }
+        } else {
+            originalName
+        }
+    }
 
-                // [추가] 만약 이름이 여전히 패키지명(com...) 같다면 강제로 예쁘게 만듦
-                if (appName.contains("com.") || appName.contains(".")) {
-                    appName = usageStats.packageName.substringAfterLast('.') // 마지막 단어 추출
-                        .replaceFirstChar { it.uppercase() } // 대문자로 시작
-                }
-
-                // 2. [추가] 앱 아이콘 가져오기
-                val appIcon = try {
-                    packageManager.getApplicationIcon(usageStats.packageName)
-                } catch (e: Exception) {
-                    null
-                }
-
-                // 최대값 기준 비율 계산 (예시 로직)
-                val maxTime = usageStatsList.maxOfOrNull { it.totalTimeInForeground } ?: 1L
-                val progress = usageStats.totalTimeInForeground.toFloat() / maxTime.toFloat()
-
-                UsageModel(
-                    packageName = usageStats.packageName,
-                    appName = appName, // 진짜 이름
-                    usageTime = usageStats.totalTimeInForeground,
-                    lastTimeUsed = usageStats.lastTimeUsed,
-                    appIcon = appIcon, // [추가] 아이콘 넣기
-                    progress = progress
-                )
-            }
-
-        // 3. [추가] DB에 저장 (캐싱)
-        // 화면에 보여줄 데이터를 리턴하기 전에, 몰래 DB에 백업해둡니다.
+    private suspend fun cacheToDatabase(models: List<UsageModel>, date: Long) {
         try {
-            val entities = resultList.map { model ->
+            val entities = models.map { model ->
                 UsageEntity(
-                    date = startTime, // 오늘 날짜 기준
+                    date = date,
                     packageName = model.packageName,
                     appName = model.appName,
                     usageTime = model.usageTime,
@@ -102,9 +128,7 @@ class UsageRepositoryImpl @Inject constructor(
             }
             usageDao.insertUsageStats(entities)
         } catch (e: Exception) {
-            e.printStackTrace() // DB 저장 실패해도 앱은 죽지 않게
+            e.printStackTrace() // DB 에러는 로그만 남기고 무시 (UI 표시가 우선)
         }
-
-        return resultList
     }
 }

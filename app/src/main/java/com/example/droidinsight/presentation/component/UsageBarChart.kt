@@ -9,83 +9,90 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.droidinsight.domain.model.UsageModel
 
+/**
+ * 앱 사용 시간을 막대 그래프(Bar Chart)로 시각화하는 컴포넌트
+ * Canvas API와 Android Native Paint를 혼합하여 그래픽과 텍스트를 모두 처리
+ */
 @Composable
 fun UsageBarChart(
     usageList: List<UsageModel>,
     modifier: Modifier = Modifier
 ) {
-    // 상위 5개만 추려서 그리기
-    val top5Apps = remember(usageList) { usageList.take(5) }
+    // 1. 데이터 가공: 상위 5개만 추출
+    val top5Apps = remember(usageList) {
+        usageList.sortedByDescending { it.usageTime }.take(5)
+    }
 
-    // 테마 컬러 가져오기 (다크모드 대응)
+    if (top5Apps.isEmpty()) return
+
+    // 2. 색상 및 사이즈 준비
     val barColor = MaterialTheme.colorScheme.primary
-    val axisColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-    val textColor = MaterialTheme.colorScheme.onSurface.toArgb() // Native Paint용
+    val axisColor = MaterialTheme.colorScheme.onSurfaceVariant
+    val textColor = MaterialTheme.colorScheme.onSurface.toArgb()
+
+    // 텍스트 크기를 sp -> px로 변환
+    val density = LocalDensity.current
+    val textPaintSize = with(density) { 12.sp.toPx() }
 
     Canvas(
         modifier = modifier
             .fillMaxWidth()
-            .height(200.dp) // 차트 높이 고정
+            .height(220.dp)
             .padding(16.dp)
     ) {
-        if (top5Apps.isEmpty()) return@Canvas
+        // 그리기 영역 계산
+        val width = size.width
+        val height = size.height
+        val graphBottom = height - 40.dp.toPx() // 텍스트 들어갈 공간
 
-        // 1. 그리기 영역 계산
-        val barWidth = 40.dp.toPx()
-        val spacing = 20.dp.toPx()
-        val graphHeight = size.height - 40.dp.toPx() // 텍스트 공간 확보
-        val maxTime = top5Apps.maxOf { it.usageTime }.toFloat()
+        // 최대값 계산
+        val maxTime = top5Apps.maxOfOrNull { it.usageTime }?.toFloat() ?: 1f
 
-        // 2. X축, Y축 그리기 (좌표 0,0은 왼쪽 상단임에 주의!)
-        // Y축 (세로선)
+        // 막대 하나의 너비와 간격 계산
+        val barWidth = (width / top5Apps.size) * 0.5f // 너비는 공간의 50%
+        val spacing = (width / top5Apps.size) * 0.5f  // 간격은 나머지 50%
+
+        // 3. 축 그리기 (X축 바닥 선)
         drawLine(
             color = axisColor,
-            start = Offset(0f, 0f),
-            end = Offset(0f, graphHeight),
-            strokeWidth = 2.dp.toPx()
-        )
-        // X축 (가로선)
-        drawLine(
-            color = axisColor,
-            start = Offset(0f, graphHeight),
-            end = Offset(size.width, graphHeight),
+            start = Offset(0f, graphBottom),
+            end = Offset(width, graphBottom),
             strokeWidth = 2.dp.toPx()
         )
 
-        // 3. 막대(Bar) 그리기
+        // 4. 데이터 그리기
         top5Apps.forEachIndexed { index, app ->
+            val x = (index * (barWidth + spacing)) + (spacing / 2)
             val ratio = if (maxTime > 0) app.usageTime / maxTime else 0f
-            val barHeight = graphHeight * ratio
+            val barHeight = (graphBottom * ratio)
 
-            val x = (index * (barWidth + spacing)) + 20.dp.toPx() // 여백 줌
-            val y = graphHeight - barHeight
-
-            // 막대 그리기
-            drawRect(
+            drawRoundRect(
                 color = barColor,
-                topLeft = Offset(x, y),
-                size = Size(barWidth, barHeight)
+                topLeft = Offset(x, graphBottom - barHeight),
+                size = Size(barWidth, barHeight),
+                cornerRadius = CornerRadius(8.dp.toPx(), 8.dp.toPx())
             )
 
-            // 4. 앱 이름 그리기 (Native Paint 사용)
-            // Compose Canvas는 drawText가 실험적 기능이라 Native Canvas를 쓰는 게 안정적입니다.
             drawContext.canvas.nativeCanvas.apply {
                 drawText(
-                    app.appName.take(4), // 이름이 길면 4글자만
-                    x + (barWidth / 2), // 텍스트 x 위치 (막대 중앙)
-                    graphHeight + 30.dp.toPx(), // 텍스트 y 위치 (X축 아래)
+                    app.appName.take(5), // 5글자까지만 표시
+                    x + (barWidth / 2),  // 텍스트 중앙 정렬
+                    height,              // 그래프 바닥 아래에 위치
                     Paint().apply {
                         color = textColor
-                        textSize = 30f
+                        textSize = textPaintSize
                         textAlign = Paint.Align.CENTER
+                        isAntiAlias = true // 텍스트 깨짐 방지
                     }
                 )
             }

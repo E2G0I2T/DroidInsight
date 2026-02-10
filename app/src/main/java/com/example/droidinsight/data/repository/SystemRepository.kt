@@ -6,26 +6,42 @@ import android.os.Build
 import android.os.Environment
 import android.os.StatFs
 import com.example.droidinsight.domain.model.SystemInfo
-import java.io.File
+import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 
 class SystemRepository @Inject constructor(
-    private val context: Context
+    @ApplicationContext private val context: Context
 ) {
+
+    // 기기의 하드웨어 및 소프트웨어 정보를 종합하여 반환
     fun getSystemInfo(): SystemInfo {
-        // 1. 기기 기본 정보
-        val model = Build.MODEL
-        val version = "Android ${Build.VERSION.RELEASE} (SDK ${Build.VERSION.SDK_INT})"
-        val manufacturer = Build.MANUFACTURER.uppercase()
+        val memoryInfo = getMemoryInfo()
+        val storageInfo = getStorageInfo()
 
-        // 2. RAM 정보 (ActivityManager)
-        val actManager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+        return SystemInfo(
+            modelName = Build.MODEL,
+            androidVersion = "Android ${Build.VERSION.RELEASE} (SDK ${Build.VERSION.SDK_INT})",
+            manufacturer = Build.MANUFACTURER.uppercase(),
+            totalRam = memoryInfo.totalMem,
+            availableRam = memoryInfo.availMem,
+            totalStorage = storageInfo.first,
+            availableStorage = storageInfo.second
+        )
+    }
+
+    // ActivityManager를 통해 현재 RAM 상태를 조회
+    private fun getMemoryInfo(): ActivityManager.MemoryInfo {
+        val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
         val memoryInfo = ActivityManager.MemoryInfo()
-        actManager.getMemoryInfo(memoryInfo)
+        activityManager.getMemoryInfo(memoryInfo)
+        return memoryInfo
+    }
 
-        // 3. 내부 저장소 정보 (StatFs)
+    // StatFs를 사용하여 내부 저장소(Data Directory)의 용량을 계산
+    private fun getStorageInfo(): Pair<Long, Long> {
         val path = Environment.getDataDirectory()
         val stat = StatFs(path.path)
+
         val blockSize = stat.blockSizeLong
         val totalBlocks = stat.blockCountLong
         val availableBlocks = stat.availableBlocksLong
@@ -33,14 +49,6 @@ class SystemRepository @Inject constructor(
         val totalStorage = totalBlocks * blockSize
         val availableStorage = availableBlocks * blockSize
 
-        return SystemInfo(
-            modelName = model,
-            androidVersion = version,
-            manufacturer = manufacturer,
-            totalRam = memoryInfo.totalMem,
-            availableRam = memoryInfo.availMem,
-            totalStorage = totalStorage,
-            availableStorage = availableStorage
-        )
+        return Pair(totalStorage, availableStorage)
     }
 }
