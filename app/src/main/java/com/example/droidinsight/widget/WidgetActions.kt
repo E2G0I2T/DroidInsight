@@ -12,9 +12,8 @@ class ToggleAction : ActionCallback {
     override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) {
         updateAppWidgetState(context, glanceId) { prefs ->
             val current = prefs[CURRENT_MODE] ?: 0
-            prefs[CURRENT_MODE] = (current + 1) % 2
+            prefs[CURRENT_MODE] = (current + 1) % 3
 
-            // 모드 바꿀 때도 갱신 시간 업데이트해주면 좋음
             prefs[LAST_UPDATED] = System.currentTimeMillis()
         }
         BatteryWidget().update(context, glanceId)

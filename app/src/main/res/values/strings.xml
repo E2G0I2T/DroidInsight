@@ -1,3 +1,26 @@
 <resources>
     <string name="app_name">DroidInsight</string>
+
+    <string name="usage_title">오늘의 앱 사용 기록</string>
+    <string name="usage_empty">집계된 사용 기록이 없습니다.</string>
+    <string name="usage_permission_msg">앱 사용 정보를 보려면\n권한이 필요합니다.</string>
+    <string name="usage_permission_btn">권한 허용하러 가기</string>
+
+    <string name="network_title">Network Monitor</string>
+    <string name="network_realtime_traffic">Real-time Download Traffic</string>
+    <string name="network_benchmark">Network Benchmark</string>
+    <string name="network_max">MAX</string>
+    <string name="network_avg">AVG</string>
+    <string name="btn_start_test">Start Speed Test</string>
+    <string name="btn_stop_test">Stop Test</string>
+
+    <string name="widget_battery">Battery</string>
+    <string name="widget_ram">RAM Usage</string>
+    <string name="widget_storage">Storage</string>
+    <string name="widget_refresh_hint">Tap value to refresh</string>
+
+    <string name="dialog_warning_title">데이터 사용 경고</string>
+    <string name="dialog_warning_msg">속도 측정을 위해 약 100MB의 데이터를 다운로드합니다.\n데이터 요금이 부과될 수 있습니다.\n계속하시겠습니까?</string>
+    <string name="dialog_confirm">시작</string>
+    <string name="dialog_cancel">취소</string>
 </resources>
